@@ -1,7 +1,7 @@
 #!/usr/bin/env python
  
 """
-Pandoc filter to process code blocks with class "plantuml" into
+Pandoc panflute filter to process code blocks with class "plantuml" into
 plant-generated images.
 """
 
@@ -77,10 +77,10 @@ def plantuml(elem, doc):
             except OSError:
                 pass
  
-            txt =  code
+            txt =  elem.text
             if not txt.startswith("@start"):
                 txt = "@startuml\n" + txt + "\n@enduml\n"
-            with open(src, "w", encoding='utf-8', errors='ignore') as f:
+            with open(src, "w", encoding=DEFAULT_CODE, errors='ignore') as f:
                 f.write(txt)
  
             call(["java", "-jar", "plantuml.jar", "-t"+filetype, src])
