@@ -26,12 +26,13 @@ else:
     sys.stdout.reconfigure(encoding=DEFAULT_CODE)
 
 
+
 imagedir = "plantuml-images"
 
 GENERATE_IMAGE_FORMAT = "{}_{:03d}"
 
 def sha1(x):
-    return hashlib.sha1(bytes(x)).hexdigest()
+    return hashlib.sha1(x.encode()).hexdigest()
  
  
 def filter_keyvalues(kv):
@@ -48,6 +49,14 @@ def filter_keyvalues(kv):
 def filter_keyvalue_header(kv, index):
     res = []
     header = []
+
+
+def get_plantuml_path():
+    plantuml_path = os.getenv('PLANTUML_JAR', 'plantuml.jar')
+    plantuml_path = plantuml_path.strip('"')
+
+    return plantuml_path
+
 
 def plantuml(elem, doc):
     identities = set()
@@ -83,7 +92,13 @@ def plantuml(elem, doc):
             with open(src, "w", encoding=DEFAULT_CODE, errors='ignore') as f:
                 f.write(txt)
  
-            call(["java", "-jar", "plantuml.jar", "-t"+filetype, src])
+            args = ["java",
+                  "-jar", get_plantuml_path(),
+                  '-Dfile.encoding="UTF-8"',
+                  "-t"+filetype,
+                  src]
+            #sys.stderr.write('args = {}\n'.format(args))      
+            call(args)
  
             sys.stderr.write('Created image ' + dest + '\n')
  
