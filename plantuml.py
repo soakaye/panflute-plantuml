@@ -69,9 +69,13 @@ def get_header(attrib, suffix):
                 level = 1
                 title_str = msgs[0]
             else:
-                level = int(msgs[0])
-                title_str = msgs[1]
-
+                try:
+                    level = int(msgs[0].strip())
+                    title_str = msgs[1]
+                except:
+                    level = 1
+                    title_str = msgs[1]
+            
             ident = make_new_ident(re.sub('[ \t\n]', '-', title_str))
             identities.add(ident)
 
