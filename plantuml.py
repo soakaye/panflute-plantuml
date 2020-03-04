@@ -106,6 +106,21 @@ def get_plantuml_jar():
 
     return plantuml_jar
 
+def get_include_path(attrib):
+    path_list = [str(pathlib.Path('.').resolve())]
+
+    if 'include.path' in attrib:
+        include_path_string = attrib['include.path']
+        include_path = [str(pathlib.Path(path).resolve()) for path in include_path_string.split(':')]
+        path_list.extend(include_path)
+    
+    return path_list
+
+def get_include_path_arg(path_list):
+    arg_list = ['-Dplantuml.include.path="{}"'.format(path) for path in path_list]
+
+    return arg_list
+
 
 def plantuml(elem, doc):
     if type(elem) == CodeBlock and 'plantuml' in elem.classes:
@@ -128,11 +143,14 @@ def plantuml(elem, doc):
             with open(src, "w", encoding=DEFAULT_CODE, errors='ignore') as f:
                 f.write(txt)
 
-            args = ["java", "-jar", get_plantuml_jar(),
-                    "-Dfile.encoding=UTF-8",
-                    "-charset", "UTF-8",
-                    "-t"+filetype,
-                    src]
+            args = ["java"]
+            args.extend(["-Dfile.encoding=UTF-8"])
+            args.extend(get_include_path_arg(get_include_path(elem.attributes)))
+            args.extend(["-jar", get_plantuml_jar()])
+            args.extend(["-charset", "UTF-8"])
+            args.append("-t"+filetype)
+            args.append(src)
+
             call(args)
 
             #sys.stderr.write('Created image ' + dest + '\n')
