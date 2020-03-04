@@ -62,5 +62,5 @@ Set include search path.
 
 ### header, header_0XX
 Insert header before each diagram.
-Format: 'level,header-streing'
+Format: 'level,header-string'
 
