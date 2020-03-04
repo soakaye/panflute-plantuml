@@ -32,11 +32,13 @@ Alice -> Bob : message 6
 # level-1 title
 ```{
     .plantuml
+    include.path='..'
     header="1,A level-1 title for the 1st page"
     header_001="2,A level-2 title for the 2nd page"
     header_002="2,A level-2 title for the last page"
 }
 @startuml
+
 
 Alice -> Bob : message 1
 Alice -> Bob : message 2
@@ -54,3 +56,11 @@ Alice -> Bob : message 6
 
 ```
 ~~~
+
+### include.path
+Set include search path.
+
+### header, header_0XX
+Insert header before each diagram.
+Format: 'level,header-streing'
+
