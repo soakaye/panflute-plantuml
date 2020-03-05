@@ -1,109 +1,199 @@
 #!/usr/bin/env python
- 
+
 """
 Pandoc panflute filter to process code blocks with class "plantuml" into
-plant-generated images.
+'plantuml-images' images.
 """
 
 import codecs
 import hashlib
 import os
 import pathlib
+import re
 import sys
-from panflute import toJSONFilter, Str, Para, Image, CodeBlock
 from subprocess import call
- 
 
+from panflute import CodeBlock, Header, Image, Para, Str, toJSONFilter
+
+# default encode
 DEFAULT_CODE = 'utf-8'
 
+MAX_IDENT_RENAME_NUM = 10
+
+# output image directory
+IMAGEDIR = "plantuml-images"
+
+# newpage diagram name format
+SPLIT_DIAGRAM_NAME_FORMAT = "{}{}"
+
+# identites
+identities = set()
+
+# set stdin/stdout encoding: utf-8
 if (sys.version_info.major == 3) and (sys.version_info.minor < 7):  # for <=python3.6
-    # for stdin
     sys.stdin = codecs.getreader(DEFAULT_CODE)(sys.stdin.buffer)
-    # for stdout
     sys.stdout = codecs.getwriter(DEFAULT_CODE)(sys.stdout.buffer)
 else:
     sys.stdin.reconfigure(encoding=DEFAULT_CODE)
     sys.stdout.reconfigure(encoding=DEFAULT_CODE)
 
 
-
-imagedir = "plantuml-images"
-
-GENERATE_IMAGE_FORMAT = "{}_{:03d}"
-
 def sha1(x):
     return hashlib.sha1(x.encode()).hexdigest()
- 
- 
-def filter_keyvalues(kv):
-  res = []
-  caption = []
-  for k,v in kv:
-    if k == "caption":
-      caption = [ Str(v) ]
+
+
+def make_new_ident(ident):
+    if ident in identities:
+        for id in range(1, MAX_IDENT_RENAME_NUM+1):
+            new_ident = '{}-{}'.format(ident, id)
+            if new_ident in identities:
+                continue
+            else:
+                ident = new_ident
+                break
+
+    return ident
+
+
+def get_header(attrib, suffix):
+    if not suffix:
+        header_attribute = 'header'
     else:
-      res.append( [k,v] )
- 
-  return caption, "fig:" if caption else "", res
- 
-def filter_keyvalue_header(kv, index):
-    res = []
-    header = []
+        header_attribute = SPLIT_DIAGRAM_NAME_FORMAT.format('header', suffix)
+
+    if header_attribute in attrib:
+        header_str = attrib[header_attribute]
+        if header_str:
+            msgs = header_str.split(',', 1)
+            if len(msgs) != 2:
+                level = 1
+                title_str = msgs[0]
+            else:
+                try:
+                    level = int(msgs[0].strip())
+                    title_str = msgs[1]
+                except:
+                    level = 1
+                    title_str = msgs[1]
+            
+            ident = make_new_ident(re.sub('[ \t\n]', '-', title_str))
+            identities.add(ident)
+
+            title = [Str(title_str)]
+            header = Header(*title, level=level, identifier=ident)
+            return header
+
+    return None
 
 
-def get_plantuml_path():
-    plantuml_path = os.getenv('PLANTUML_JAR', 'plantuml.jar')
-    plantuml_path = plantuml_path.strip('"')
+def get_caption_attribute(attrib, suffix):
+    if not suffix:
+        caption_attribute = 'caption'
+    else:
+        caption_attribute = SPLIT_DIAGRAM_NAME_FORMAT.format('caption', suffix)
 
-    return plantuml_path
+    if caption_attribute in attrib:
+        caption_str = attrib[caption_attribute]
+        if caption_str:
+            return ([Str(caption_str)], 'fig:')
+
+    return ([], '')
+
+
+def get_plantuml_jar():
+    plantuml_jar = os.getenv(
+        'PLANTUML_JAR', 'plantuml.jar').strip('"').strip("'")
+
+    return plantuml_jar
+
+def get_include_path(attrib):
+    path_list = [str(pathlib.Path('.').resolve())]
+
+    if 'include.path' in attrib:
+        include_path_string = attrib['include.path']
+        include_path = [str(pathlib.Path(path).resolve()) for path in include_path_string.split(':')]
+        path_list.extend(include_path)
+    
+    return path_list
+
+def get_include_path_arg(path_list):
+    arg_list = ['-Dplantuml.include.path="{}"'.format(path) for path in path_list]
+
+    return arg_list
 
 
 def plantuml(elem, doc):
-    identities = set()
-    
-    if hasattr(elem, "identifier"):
-        if elem.identifier:
-            identities.add(elem.identifier)
-
     if type(elem) == CodeBlock and 'plantuml' in elem.classes:
-        if 'caption' in elem.attributes:
-            caption = [Str(elem.attributes['caption'])]
-            typef = 'fig:'
-        else:
-            caption = []
-            typef = ''
- 
         filename = sha1(elem.text)
         filetype = {'html': 'svg', 'latex': 'eps'}.get(doc.format, 'png')
-        src = os.path.join(imagedir, filename + '.uml')
-        dest = os.path.join(imagedir, filename + '.' + filetype)
-        dest_dir = pathlib.Path(imagedir)
+        src = os.path.join(IMAGEDIR, filename + '.uml')
+        dest = os.path.join(IMAGEDIR, filename + '.' + filetype)
+        dest_dir = pathlib.Path(IMAGEDIR)
 
         if not os.path.isfile(dest):
             try:
-                os.mkdir(imagedir)
-                sys.stderr.write('Created directory ' + imagedir + '\n')
+                os.mkdir(IMAGEDIR)
+                sys.stderr.write('Created directory ' + IMAGEDIR + '\n')
             except OSError:
                 pass
- 
-            txt =  elem.text
+
+            txt = elem.text
             if not txt.startswith("@start"):
                 txt = "@startuml\n" + txt + "\n@enduml\n"
             with open(src, "w", encoding=DEFAULT_CODE, errors='ignore') as f:
                 f.write(txt)
- 
-            args = ["java",
-                  "-jar", get_plantuml_path(),
-                  '-Dfile.encoding="UTF-8"',
-                  "-t"+filetype,
-                  src]
-            #sys.stderr.write('args = {}\n'.format(args))      
+
+            args = ["java"]
+            args.extend(["-Dfile.encoding=UTF-8"])
+            args.extend(get_include_path_arg(get_include_path(elem.attributes)))
+            args.extend(["-jar", get_plantuml_jar()])
+            args.extend(["-charset", "UTF-8"])
+            args.append("-t"+filetype)
+            args.append(src)
+
             call(args)
- 
-            sys.stderr.write('Created image ' + dest + '\n')
- 
-        return Para(Image(*caption, identifier=elem.identifier,
-            attributes=elem.attributes, url=dest, title=typef))
- 
+
+            #sys.stderr.write('Created image ' + dest + '\n')
+
+        dest_files = sorted(dest_dir.glob(filename + '*.' + filetype))
+
+        parts = []
+        for i, image in enumerate(dest_files):
+            rel = image.relative_to(dest_dir)
+            sys.stderr.write('Created image {} - {}\n'.format(i+1,
+                                                              os.path.join(dest_dir.name, rel)))
+            dest_image = str(image)
+            basename = image.with_suffix('').name
+            suffix = basename[len(filename):]
+
+            head = get_header(elem.attributes, suffix)
+            if head:
+                parts.append(head)
+
+            caption, typef = get_caption_attribute(elem.attributes, suffix)
+
+            if i == 0:
+                im = Image(*caption, identifier=elem.identifier,
+                           attributes=elem.attributes, url=dest_image, title=typef)
+                identities.add(elem.identifier)
+            else:
+                ident = SPLIT_DIAGRAM_NAME_FORMAT.format(
+                    elem.identifier, suffix)
+                new_ident = make_new_ident(ident)
+                identities.add(new_ident)
+
+                im = Image(*caption, identifier=new_ident,
+                           attributes=elem.attributes, url=dest_image, title=typef)
+
+            parts.append(Para(im))
+
+        return parts
+
+    elif hasattr(elem, "identifier"):
+        if elem.identifier:
+            identities.add(elem.identifier)
+
+
+
 if __name__ == "__main__":
     toJSONFilter(plantuml)
